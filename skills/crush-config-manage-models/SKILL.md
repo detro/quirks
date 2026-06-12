@@ -1,5 +1,5 @@
 ---
-name: crush-agent-refresh-models
+name: crush-config-manage-models
 description: Use when the user wants to update, refresh, or sync the model definitions in their Crush config (crush.json) for one or more providers from the upstream charmbracelet/catwalk definitions — including composite/reseller providers like Vertex AI or Bedrock that combine models from other providers (e.g. "update the models used by anthropic", "add to my vertexai all the gemini and anthropic models", or "update all the models I already use with the latest version").
 license: Apache-2.0
 metadata:
@@ -14,7 +14,10 @@ metadata:
 > **Scope:** This skill is specific to the **Crush** coding agent
 > ([`charmbracelet/crush`](https://github.com/charmbracelet/crush)) and its
 > `crush.json` configuration file. It is not applicable to other agents or
-> config formats.
+> config formats. **Crucially, it is limited to providers that have an
+> authoritative configuration defined in the upstream `charmbracelet/catwalk`
+> repository; arbitrary or custom providers not present in catwalk cannot be
+> refreshed or added.**
 
 This skill updates the per-provider `models` arrays inside the user's Crush
 configuration (`crush.json`) using the authoritative model definitions published
@@ -94,7 +97,7 @@ Resolve the active Crush config path the same way Crush documents it
 (<https://github.com/charmbracelet/crush#configuration>). Check, in order, and
 use the first that exists:
 
-1. `$CRUSH_CONFIG` / an explicit path the user gives.
+1. `$CRUSH_CONFIG` / `$CRUSH_GLOBAL_CONFIG` (or an explicit path the user gives).
 2. **Project-local**: `./crush.json` or `./.crush.json` in the working dir.
 3. **Global**, by OS:
    - macOS / Linux: `$XDG_CONFIG_HOME/crush/crush.json`, else
@@ -317,12 +320,51 @@ This recap is mandatory and comes in addition to the pre-write diff from step 4.
 - **Only `jq` is required.** Fetching uses Crush's `fetch`/`download` tool;
   editing uses Crush's `edit`/`write` tools. No `gh` or `curl` is needed.
 
+## Automating & Protecting with Crush Hooks
+
+By leveraging Crush's native hook system (as described in the `crush-hooks` skill), you can streamline model refreshing and prevent config corruption.
+
+### 1. Auto-approving catwalk.sh operations
+To allow this skill to run `catwalk.sh` without interactive prompts, add a `PreToolUse` hook matching `^bash$`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^bash$",
+        "command": "if echo \"$CRUSH_TOOL_INPUT_COMMAND\" | grep -q 'catwalk.sh'; then echo '{\"decision\":\"allow\"}'; fi"
+      }
+    ]
+  }
+}
+```
+
+### 2. Safeguarding crush.json from invalid JSON writes
+To prevent accidental corruption of `crush.json` during the update process, add a `PreToolUse` hook that validates that any proposed `write` or `edit` keeps `crush.json` as valid JSON:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^(write|edit|multiedit)$",
+        "command": "if [[ \"$CRUSH_TOOL_INPUT_FILE_PATH\" == *crush.json ]]; then if [[ \"$CRUSH_TOOL_NAME\" == \"write\" ]]; then read -r input; content=$(echo \"$input\" | jq -r '.tool_input.content'); if ! echo \"$content\" | jq . >/dev/null 2>&1; then echo \"Aborting: invalid JSON for crush.json\" >&2; exit 2; fi; fi; fi"
+      }
+    ]
+  }
+}
+```
+
+### 3. Complementing "disable_provider_auto_update"
+Under `options` in `crush.json`, the `disable_provider_auto_update` boolean can be set to `true` to stop Crush from auto-refreshing its built-in model definitions on its own. When auto-updates are disabled, utilizing this manual skill is the primary, reliable way to keep models synchronized with upstream catwalk definitions.
+
 ## Quick reference
 
 Fetch first (Crush `fetch`/`download`), saving to local files, then:
 
 ```bash
-S=~/.config/agents/skills/crush-agent-refresh-models/scripts/catwalk.sh
+S=~/.agents/skills/crush-config-manage-models/scripts/catwalk.sh
 
 # (agent fetched these to /tmp/catwalk/<provider>.json beforehand)
 "$S" meta    /tmp/catwalk/vertexai.json            # provider metadata incl. type
