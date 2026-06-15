@@ -46,12 +46,27 @@
 #       The merged result is the new array; a human-readable summary of
 #       added/removed/kept ids is printed to STDERR for the agent to relay.
 #
+#   restrict <models.json> <keep.json>
+#       Print <models.json> filtered down to only the models whose `.id` also
+#       appears in <keep.json>. <keep.json> may be a models array, a full
+#       provider object, or a bare array of id strings. Order follows
+#       <models.json>. Use this to "refresh ONLY the models I already have":
+#       compose/fetch the desired upstream set, then `restrict` it to the ids
+#       currently in crush.json (so retired ids drop out and no new ids are
+#       added). Uses only portable jq (no --slurpfile).
+#
 #   apply <crush.json> <provider> <models.json>
 #       Set .providers.<provider>.models to the contents of <models.json> in
 #       <crush.json> and print the resulting FULL document on stdout. Does NOT
 #       write in place — the agent reviews the diff and writes the file with
 #       Crush's own edit/write tools. Preserves every other part of the
 #       document. Uses only portable jq (no --slurpfile).
+#
+# IMPORTANT (jq portability): this script never uses `--slurpfile`, because some
+# jq builds (e.g. certain Homebrew 1.8.x binaries) reject it with
+# "function not defined: slurpfile/0". All file contents are passed into jq via
+# `--argjson NAME "$(cat file.json)"` instead. Follow the same rule for any
+# ad-hoc jq you run outside this script.
 #
 # Exit codes: non-zero on any missing-file or parse error.
 
@@ -136,6 +151,22 @@ cmd_merge() {
   echo "$new" | jq '.'
 }
 
+cmd_restrict() {
+  [ "$#" -eq 2 ] || die "usage: catwalk.sh restrict <models.json> <keep.json>"
+  local models keep
+  models="$(models_of "$1")"
+  require_json "$2"
+  # keep.json may be: a models array, a full provider object, or an array of id
+  # strings. Normalise to a list of id strings either way.
+  keep="$(jq 'if type=="array" then . else (.models // []) end
+              | map(if type=="string" then . else .id end)' "$2")"
+  # Portable across jq versions (no --slurpfile): pass arrays via --argjson.
+  jq -n --argjson m "$models" --argjson keep "$keep" '
+    ($keep | unique) as $ids
+    | $m | map(select(.id as $i | $ids | index($i)))
+  '
+}
+
 cmd_apply() {
   [ "$#" -eq 3 ] || die "usage: catwalk.sh apply <crush.json> <provider> <models.json>"
   local cfg="$1" provider="$2" models="$3"
@@ -147,15 +178,16 @@ cmd_apply() {
 }
 
 main() {
-  [ "$#" -ge 1 ] || die "usage: catwalk.sh {models|meta|compose|merge|apply} ..."
+  [ "$#" -ge 1 ] || die "usage: catwalk.sh {models|meta|compose|restrict|merge|apply} ..."
   local sub="$1"; shift
   case "$sub" in
-    models)  cmd_models "$@" ;;
-    meta)    cmd_meta "$@" ;;
-    compose) cmd_compose "$@" ;;
-    merge)   cmd_merge "$@" ;;
-    apply)   cmd_apply "$@" ;;
-    *) die "unknown subcommand '$sub' (expected models|meta|compose|merge|apply)" ;;
+    models)   cmd_models "$@" ;;
+    meta)     cmd_meta "$@" ;;
+    compose)  cmd_compose "$@" ;;
+    restrict) cmd_restrict "$@" ;;
+    merge)    cmd_merge "$@" ;;
+    apply)    cmd_apply "$@" ;;
+    *) die "unknown subcommand '$sub' (expected models|meta|compose|restrict|merge|apply)" ;;
   esac
 }
 

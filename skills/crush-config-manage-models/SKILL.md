@@ -43,16 +43,30 @@ needed — catwalk model objects drop straight into Crush.
   ```
   Save each fetched file locally (e.g. `download` it to `/tmp/catwalk/<provider>.json`,
   or `fetch` it and write the body to a file).
-- **All JSON math (compose / dedup / merge / apply) is done by the helper
-  script**, which reads those local files and never touches the network:
+- **All JSON math (compose / dedup / restrict / merge / apply) is done by the
+  helper script**, which reads those local files and never touches the network:
   ```
-  scripts/catwalk.sh {models|meta|compose|merge|apply} <file> ...
+  scripts/catwalk.sh {models|meta|compose|restrict|merge|apply} <file> ...
   ```
 - **Editing `crush.json` is done by YOU** with Crush's `view`/`edit`/`write`
   tools, after showing the diff.
 
 The **only external dependency is `jq`** (used by the script; the builtin `jq`
 skill documents it). No `gh`, no `curl`, no network access in the script.
+
+> **jq portability — never use `--slurpfile`.** Some `jq` builds (notably certain
+> Homebrew 1.8.x binaries) reject `--slurpfile` (and even `--version`) with
+> `jq: function not defined: slurpfile/0`. The helper script already avoids it,
+> and **any ad-hoc jq YOU run must avoid it too**. To pull a JSON file into a jq
+> variable, read it with `--argjson` and a command substitution instead:
+> ```bash
+> # WRONG (may fail on some jq builds):
+> jq --slurpfile cur cur.json 'MAP USING $cur[0]' new.json
+> # RIGHT (portable everywhere):
+> jq --argjson cur "$(cat cur.json)" 'MAP USING $cur' new.json
+> ```
+> Better still, prefer the `restrict` subcommand (below) so you don't hand-roll
+> id-intersection jq at all.
 
 ### Listing available providers
 
@@ -248,6 +262,33 @@ say which you picked.
 > (e.g. include the variant word, or weight version vs date) until each group's
 > "latest" is the one the user expects.
 
+### C. Refresh ONLY the ids already configured (`restrict`)
+
+> "make sure the definition of each model I have is latest" / "just update what
+> I already use, don't add new models"
+
+This is a very common intent (and the natural reading of Mode 3): keep the user's
+**existing set** of model ids, but replace each definition with the upstream one
+and drop any id that has been retired upstream — **without adding** every other
+model the upstream provider now ships.
+
+Don't hand-roll this with `--slurpfile`. Use the `restrict` subcommand: it
+filters a desired/composed array down to only the ids present in a "keep" file
+(a models array, a full provider object, or a bare array of id strings), using
+portable jq only.
+
+```bash
+S=~/.agents/skills/crush-config-manage-models/scripts/catwalk.sh
+# desired upstream set (one provider, or a composed reseller superset):
+"$S" compose /tmp/catwalk/anthropic.json /tmp/catwalk/gemini.json > /tmp/new.json
+# the user's current array for this provider:
+jq '.providers.<provider>.models // []' crush.json > /tmp/cur.json
+# keep only the ids the user already has (retired ids drop, nothing new added):
+"$S" restrict /tmp/new.json /tmp/cur.json > /tmp/filtered.json
+```
+
+Then continue at **After filtering** using `/tmp/filtered.json`.
+
 ### After filtering
 
 Use `/tmp/filtered.json` in place of `/tmp/new.json` from step 2 of **Apply the
@@ -292,16 +333,35 @@ For each provider being updated:
 
 ## Final recap (always)
 
-After all targeted providers have been written back, **end with a recap of the
-final model list** so the user can see the end state at a glance. For each
-provider you touched, read the saved `crush.json` and list the model ids now
-present (e.g. `jq -r '.providers.<provider>.models[].id' crush.json`). Present,
-per provider:
+After all targeted providers have been written back, you **MUST always end with a
+recap of the models now activated for each provider** so the user can see the end
+state at a glance. This recap is mandatory on every run — even when only one
+provider changed, or when nothing changed.
 
-- the **complete final list** of model ids now configured (the recap), and
-- the counts / change summary (added, removed, kept-updated) for context.
+For each provider you touched, read the saved `crush.json` and enumerate the
+model ids now present:
 
-This recap is mandatory and comes in addition to the pre-write diff from step 4.
+```bash
+jq -r '.providers.<provider>.models[].id' crush.json
+```
+
+Format the recap as a **list**: one section (or sub-list) per provider, and under
+each provider a bulleted list of the model ids now activated. For example:
+
+```
+Activated models:
+- litellm (7):
+    - claude-opus-4-8
+    - claude-sonnet-4-6
+    - …
+- vertexai (9):
+    - gemini-3.1-pro-preview
+    - …
+```
+
+Alongside each provider's list, include the counts / change summary (added,
+removed, kept-updated) for context. This recap is mandatory and comes in
+addition to the pre-write diff from step 4.
 
 ## Notes & gotchas
 
@@ -367,11 +427,15 @@ Fetch first (Crush `fetch`/`download`), saving to local files, then:
 S=~/.agents/skills/crush-config-manage-models/scripts/catwalk.sh
 
 # (agent fetched these to /tmp/catwalk/<provider>.json beforehand)
-"$S" meta    /tmp/catwalk/vertexai.json            # provider metadata incl. type
-"$S" models  /tmp/catwalk/anthropic.json           # one provider's models array
-"$S" compose /tmp/catwalk/vertexai.json \
-             /tmp/catwalk/gemini.json \
-             /tmp/catwalk/anthropic.json           # reseller + sources, sources win
-"$S" merge   /tmp/cur.json /tmp/new.json           # merged array + diff summary(stderr)
-"$S" apply   crush.json vertexai /tmp/merged.json  # full doc w/ models replaced
+"$S" meta     /tmp/catwalk/vertexai.json            # provider metadata incl. type
+"$S" models   /tmp/catwalk/anthropic.json           # one provider's models array
+"$S" compose  /tmp/catwalk/vertexai.json \
+              /tmp/catwalk/gemini.json \
+              /tmp/catwalk/anthropic.json           # reseller + sources, sources win
+"$S" restrict /tmp/new.json /tmp/cur.json           # keep only ids already configured
+"$S" merge    /tmp/cur.json /tmp/new.json           # merged array + diff summary(stderr)
+"$S" apply    crush.json vertexai /tmp/merged.json  # full doc w/ models replaced
 ```
+
+> Pass JSON into ad-hoc jq with `--argjson NAME "$(cat file.json)"`, never with
+> `--slurpfile` (see the jq-portability note near the top).
