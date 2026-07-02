@@ -1,0 +1,7 @@
+version: '3'
+
+tasks:
+  install:
+    cmds:
+      - mkdir -p ~/.agents/skills
+      - ln -sfn $(pwd)/skills/* ~/.agents/skills/
