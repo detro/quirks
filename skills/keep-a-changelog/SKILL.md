@@ -1,308 +1,210 @@
 ---
 name: keep-a-changelog
-description: Manages the project's CHANGELOG.md following Keep a Changelog format. Bootstraps a new changelog from scratch, creates entries for new releases, or updates an in-progress (unreleased) entry in-place — all based on git history and tags.
+description: Manages the project's CHANGELOG.md following the detected or requested format (e.g., Keep a Changelog or HashiCorp/Terraform format). Bootstraps a new changelog, creates entries for new releases, or updates in-progress entries in-place based on git history.
 license: Apache-2.0
 metadata:
   author: Ivan De Marino (http://github.com/detro)
-  version: 2.1.0
+  version: 2.2.0
 ---
 
-# Keep a Changelog
+# Keep a Changelog (Multi-Format Support)
 
 > Authored and maintained by **Ivan De Marino**.
 
-This skill manages the project's `CHANGELOG.md` — bootstrapping it from scratch, creating new version entries, or updating unreleased entries in-place.
+This skill manages the project's `CHANGELOG.md` (or `CHANGELOG`) — bootstrapping it from scratch, creating new version entries, or updating unreleased/in-progress entries in-place. It supports multiple changelog formats, dynamically detects existing formats, and prompts the user to select or confirm the desired standard.
 
-## Format
+## Supported Formats
 
-The changelog follows [Keep a Changelog v1.1.0](https://keepachangelog.com/en/1.1.0/) and
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+### 1. Keep a Changelog v1.1.0
+This format adheres to [Keep a Changelog v1.1.0](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-Each release entry uses this structure:
+- **Header Structure**: Standard markdown headings detailing compliance with the format.
+- **Release Entry Heading**: `## [<version>] - <YYYY-MM-DD>` (e.g., `## [1.6.0] - 2026-03-27`).
+- **Standard Categories**:
+  - `### Added` — For new features.
+  - `### Changed` — For changes in existing functionality.
+  - `### Fixed` — For bug fixes.
+  - `### Removed` — For now-removed features.
+- **Conventions**: Empty categories are omitted. Each bullet point is a concise, user-facing summary.
 
-```markdown
-## [<version>] - <YYYY-MM-DD>
+### 2. HashiCorp / Terraform Provider Format
+This format adheres to HashiCorp's changelog standard (commonly used for Terraform providers and other plugins).
 
-### Added
-- New features or capabilities.
+- **Header Structure**: Mentions compliance with HashiCorp's versioning and changelog best practices.
+- **Release Entry Heading**:
+  - Unreleased / Upcoming: `## X.Y.Z (Unreleased)`
+  - Released: `## A.B.C (Month Day, Year)` (e.g., `## 1.0.0 (March 27, 2026)`).
+- **Standard Categories**:
+  - `BREAKING CHANGES:` or `BACKWARDS INCOMPATIBILITIES:` — Brief documentation of incompatible changes and upgrade paths.
+  - `NOTES:` — Deprecations, critical crash fixes, or unexpected upgrade behavior.
+  - `FEATURES:` — Major improvements, such as new resources or data sources.
+  - `IMPROVEMENTS:` or `ENHANCEMENTS:` — Smaller additions (e.g., attributes).
+  - `BUG FIXES:` — Any fixed bugs.
+- **Conventions**:
+  - Every entry must match the syntax: `* subsystem: Descriptive message [GH-####]`
+  - *Subsystem* is typically the resource name (e.g., `resource/instance`) or `provider` if global.
+  - *PR Reference* `[GH-####]` must correspond to the GitHub pull request number.
+  - Entries under each category are ordered **lexicographically** based on the subsystem (e.g., `resource/load_balancer` comes before `resource/subnet`). Cross-cutting changes (`provider`) are listed first.
 
-### Changed
-- Changes to existing functionality.
+### 3. Other / Custom Format
+If the repository follows a custom standard, the agent prompts the user to specify or describe it, then proceeds to follow that custom layout and syntax.
 
-### Fixed
-- Bug fixes.
+---
 
-### Removed
-- Removed features (use only when applicable).
-```
+## Workflow: Detect, Ask, and Decide Mode
 
-**Rules:**
+Before writing or editing anything, execute this workflow to establish the format and update mode:
 
-- Use only the sections that have content (`Added`, `Changed`, `Fixed`, `Removed`). Omit empty sections.
-- Each bullet should be a concise, user-facing description of the change — not a commit message copy-paste.
-- Group related commits into a single bullet when they represent a single logical change.
-- Pure documentation or CI-only changes (e.g., "Updated `AGENTS.md`") may be grouped under `Changed` if meaningful, or omitted if trivial.
-- The date should be today's date in `YYYY-MM-DD` format.
+### Step 1: Detect or Prompt for Changelog Format
 
-## Workflow: Detect Whether to Create, Update, or Bootstrap
+1. **Check for Existing Files**: Look for `CHANGELOG.md` or `CHANGELOG` in the root of the repository.
+2. **Auto-Detect Format**:
+   - If the file exists, inspect the top-level headings and entries:
+     - Contains `## [<version>] - <YYYY-MM-DD>` or mentions `keepachangelog.com` → **Keep a Changelog** format.
+     - Contains `(Unreleased)` or categories like `BREAKING CHANGES:`, `FEATURES:`, `IMPROVEMENTS:` or bullet points with `[GH-####]` → **HashiCorp** format.
+3. **Ask/Confirm with the User**:
+   - Always verify the detected format, or ask the user to choose when bootstrapping or if detection is ambiguous.
+   - **Action**: Use the agent's interactive questioning tool (e.g., `question` in Crush, or the appropriate interactive tool in your platform) to present a clear option:
+     - `"Keep a Changelog" format`
+     - `"HashiCorp" format (Terraform providers, etc.)`
+     - `"Other / Custom" format (please specify)`
+   - Under the hood, document which format the changelog adheres to (both in the bootstrap header and in your internal execution context), and comply with it from that point forward.
 
-Before writing anything, determine the current state:
+### Step 2: Determine Update Mode
 
-1. **Check if `CHANGELOG.md` exists and has entries:**
-
-   If the file does not exist, or exists but contains no `## [<version>]` headings, proceed to **Mode C: Bootstrap**.
-
-2. **Check if any git tags exist:**
-
+1. **Check if any git tags exist**:
    ```bash
    git tag --sort=-v:refname | head -1
    ```
+   If no tags exist, proceed to **Mode C: Bootstrap** (even if a file exists, treat it as a fresh project).
 
-   If no tags exist at all, proceed to **Mode C: Bootstrap** (even if a `CHANGELOG.md` with entries exists — treat it as a fresh project).
+2. **Extract the latest version from the changelog**:
+   - Parse the first version heading using the pattern of the detected format (e.g., `## [1.6.0]` or `## 1.6.0 (Unreleased)`).
 
-3. **Extract the latest version from `CHANGELOG.md`:**
-
-   Parse the first `## [<version>]` heading in the file to get the version string (e.g., `1.6.0`).
-
-4. **Check if a git tag exists for that version:**
-
+3. **Check if a git tag exists for that version**:
+   - Check if the tag matches (e.g., `v1.6.0` or `1.6.0`).
    ```bash
    git tag --list "v<version>"
+   git tag --list "<version>"
    ```
 
-   For example, if the latest entry is `## [1.6.0]`, check for tag `v1.6.0`.
+4. **Decide the mode**:
+   - **No file, no tags, or empty file** → **Mode C: Bootstrap**.
+   - **Tag exists for latest entry** (it represents a finalized release) → **Mode A: Create a New Entry** at the top.
+   - **Tag does NOT exist for latest entry** (it represents a work-in-progress release or an "Unreleased" section) → **Mode B: Update Existing Entry** in-place.
 
-5. **Decide the mode:**
+---
 
-   - **No file, no entries, or no tags at all** → **Mode C: Bootstrap** a new `CHANGELOG.md`.
-   - **Tag exists for latest entry** → **Mode A:** the latest entry is a released version. Create a new entry at the top.
-   - **Tag does NOT exist for latest entry** → **Mode B:** the latest entry is still a work-in-progress. Update the existing entry in-place.
+## Workflow Modes
 
 ### Mode A: Create a New Entry (tag exists for latest entry)
-
-This is the standard flow. The new entry is inserted at the top, immediately after the file header (before the previous release entry).
-
-1. **Determine the version number:** If the user provided a version number upfront (e.g., "create a 2.0.0 entry"), use it. If no version was specified, **ask the user** what version the new entry should be before proceeding. Do not guess or infer the version number — always confirm with the user.
-
-2. **Gather changes:** Follow the steps in [Determining What Changed](#determining-what-changed) using the latest tag as the baseline.
+1. **Determine Version**: Ask the user what the next version should be. Do not guess or infer the version number — always confirm with the user.
+2. **Gather Changes**: Follow [Determining What Changed](#determining-what-changed) using the latest tag as the baseline.
+3. **Insert Heading**:
+   - For *Keep a Changelog*: Insert `## [<version>] - <YYYY-MM-DD>` at the top (under the file header).
+   - For *HashiCorp*: If this is an upcoming unreleased version, insert `## <version> (Unreleased)`. If finalizing a release, insert `## <version> (Month Day, Year)`.
 
 ### Mode B: Update an Existing Unreleased Entry (no tag for latest entry)
-
-When the latest changelog entry has no corresponding git tag, it represents an in-progress release. Instead of creating a new entry:
-
-1. **Find the baseline tag:** Since the latest entry's version has no tag, find the tag that was the baseline for that entry. This is the most recent tag that actually exists:
-
+1. **Find Baseline Tag**: Find the most recent tag that actually exists (which served as the baseline for this in-progress version):
    ```bash
    git tag --sort=-v:refname | head -1
    ```
+2. **Gather Changes**: Retrieve all commits since that baseline tag.
+3. **Rewrite Entry**:
+   - Replace the entire top entry from the unreleased header down to the next version header.
+   - Ensure you perform a full rewrite to avoid duplicates and accurately reflect any changes or squashed commits.
+   - Preserve the unreleased designation or version number unless a bump is requested.
 
-2. **Gather all commits since that baseline tag** using the steps in [Determining What Changed](#determining-what-changed) with this baseline tag.
+### Mode C: Bootstrap a New CHANGELOG
+1. **Create the file**: Write `CHANGELOG.md` or `CHANGELOG`.
+2. **Include Header**:
+   - For *Keep a Changelog*:
+     ```markdown
+     # Changelog
 
-3. **Rewrite the existing top entry** by replacing its entire content (from the `## [<version>]` heading down to but not including the next `## [` heading) with freshly generated content based on ALL commits since the baseline tag.
+     All notable changes to this project will be documented in this file.
 
-4. **Preserve the version number** from the existing entry unless the user explicitly requests a version bump. Update the date to today's date.
-
-5. **Important:** This is a full rewrite of the entry, not an append. Re-analyze all commits since the baseline tag to produce a complete, coherent entry. This ensures removed or squashed commits are reflected and duplicates are avoided.
-
-### Mode C: Bootstrap a New CHANGELOG.md (no file, no entries, or no tags)
-
-When starting a brand-new project — no `CHANGELOG.md` exists, or the file has no version entries, or no git tags exist yet:
-
-1. **Create (or overwrite) `CHANGELOG.md`** with the standard [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) file header:
-
-   ```markdown
-   # Changelog
-
-   All notable changes to this project will be documented in this file.
-
-   The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-   and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-   ```
-
-2. **Determine the baseline for commits:**
-
-   - If tags exist but the file is missing/empty: use the latest tag as the baseline (same as Mode A).
-   - If no tags exist at all: use the **root commit** of the repository as the baseline, so that all commits in the repo's history are considered:
-
-     ```bash
-     git rev-list --max-parents=0 HEAD
+     The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+     and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
      ```
+   - For *HashiCorp*:
+     ```markdown
+     # Changelog
 
-3. **Gather all commits since the baseline** using the steps in [Determining What Changed](#determining-what-changed).
+     All notable changes to this project will be documented in this file.
 
-4. **Generate the first version entry** and place it immediately after the file header. The version number should be determined by the user's request or inferred as `0.1.0` if not specified (following SemVer conventions for initial development).
+     The format is based on [HashiCorp's Changelog Best Practices](https://developer.hashicorp.com/terraform/plugin/best-practices/versioning).
+     ```
+3. **Generate First Entry**: Use the repository's root commit (or latest tag if tags exist but file is missing) as the baseline. Write the first entry at version `0.1.0` (or `1.0.0` or user's requested version) adhering to the chosen format structure.
 
-5. **Date** should be today's date in `YYYY-MM-DD` format.
+---
 
 ## Determining What Changed
 
-1. **Find the last tagged release:**
-
+1. **Find the last tag**:
    ```bash
    git tag --sort=-v:refname | head -1
    ```
-
-2. **List commits since that tag:**
-
-   ```bash
-   git log <last-tag>..HEAD --oneline --no-merges
-   ```
-
-3. **Get detailed commit info (messages and bodies):**
-
+2. **List commits since tag with message/body**:
    ```bash
    git log <last-tag>..HEAD --no-merges --format="%h %s%n%b---"
    ```
+3. **Extract PR numbers**:
+   - Parse merge commits or commit subjects for pull request IDs (e.g., `(#123)` or `Merge pull request #123`). These are used to generate references like `[GH-123]` in HashiCorp format.
 
-4. **Get a file-level summary of what changed:**
+### Category and Subsystem Mapping
 
-   ```bash
-   git diff <last-tag>..HEAD --stat
-   ```
+Map the conventional commit prefixes and file changes to the appropriate categories for each format:
 
-5. **Read specific diffs** for commits or files that need more context to write an accurate changelog bullet.
+| Commit Prefix                 | Keep a Changelog Section    | HashiCorp Section |
+|-------------------------------|-----------------------------|-------------------|
+| `feat` (new resource/feature) | Added                       | FEATURES:         |
+| `feat` (enhancements)         | Added / Changed             | IMPROVEMENTS:     |
+| `fix`                         | Fixed                       | BUG FIXES:        |
+| `refactor` / `chore`          | Changed                     | IMPROVEMENTS:     |
+| `breaking` / `!`              | Added/Changed (highlighted) | BREAKING CHANGES: |
 
-Use the commit messages as a starting point, but always read the actual diffs to understand the real impact. Conventional Commit prefixes (`feat`, `fix`, `chore`, `refactor`, `test`, `docs`) help classify changes:
+#### Subsystem Determination (HashiCorp Format Only)
+For HashiCorp format, parse the modified files in the commit diff to find the affected subsystem (e.g., `internal/provider/resource_aws_instance.go` -> `resource/aws_instance` or `provider`).
+- Sort entries lexicographically by subsystem within each category.
+- List global `provider` entries first.
 
-| Commit Prefix | Changelog Section |
-|---------------|-------------------|
-| `feat`        | Added             |
-| `fix`         | Fixed             |
-| `refactor`    | Changed           |
-| `chore`       | Changed (or omit if trivial) |
-| `test`        | Added (if new test coverage) or Changed (if refactoring tests) |
-| `docs`        | Changed (or omit if trivial) |
-
-## Identifying Contributors
-
-When a commit originates from a merged pull request by someone other than the repository owner:
-
-1. **Detect PR merges** in the full log (including merge commits):
-
-   ```bash
-   git log <last-tag>..HEAD --merges --format="%h %s"
-   ```
-
-   Merge commits from GitHub typically have the format: `Merge pull request #<number> from <org>/<branch>`.
-
-2. **Identify the PR author** by inspecting the commits within each merged PR, or by checking
-   `git log --format="%an <%ae>"` for non-merge commits associated with that PR branch.
-
-3. **Credit the contributor** at the end of the relevant changelog bullet using this format:
-
-   ```markdown
-   - Description of the change. Thank you to [@username](https://github.com/username) for the contribution!
-   ```
-
-   If the GitHub username cannot be determined from the git author name, use the git author name directly.
-
-4. **Omit contributor attribution** for commits authored by the repository owner(s) — only credit external contributors.
+---
 
 ## Examples
 
-### Example 1: Creating a New Entry (Mode A)
+### Example: HashiCorp Format Entry
+Given the following commits since `v1.1.0`:
+- `feat: add resource_network_interface (#42)`
+- `fix(resource/subnet): resolve IP allocation issue (#45)`
+- `refactor(provider): configure custom user agent (#46)`
 
-Given that the latest changelog entry is `## [1.5.1-rc1]` and tag `v1.5.1-rc1` exists, and these commits since `v1.5.1-rc1`:
-
-```
-29ab8fc chore(docs): update docs to mention the new 'completion' command
-eb4edae feat(cli): adding 'completion' command to generate bash/zsh/fish auto-complete
-e81cc71 fix: hash command args when spawning k8s job    (from merged PR by @snyk-thannan)
-```
-
-The resulting **new** changelog entry inserted at the top:
+The resulting entry for version `1.2.0 (Unreleased)` or `1.2.0 (July 2, 2026)` will look like:
 
 ```markdown
-## [1.6.0] - 2026-03-27
+## 1.2.0 (Unreleased)
 
-### Added
+FEATURES:
 
-- Command `debops completion <shell>` to generate shell auto-completion scripts for `bash`, `zsh`, and `fish`.
+* **New Resource:** `network_interface` [GH-42]
 
-### Changed
+IMPROVEMENTS:
 
-- Updated `AGENTS.md` and `README.md` with the latest changes and features.
+* provider: Configure custom user agent [GH-46]
 
-### Fixed
+BUG FIXES:
 
-- Spawned Kubernetes Job names now include a hash of the command arguments, allowing parallel invocations
-  of the same base command with different arguments to spawn distinct jobs without name collisions.
-  Thank you to [@snyk-thannan](https://github.com/snyk-thannan) for the fix!
+* resource/subnet: Resolve IP allocation issue [GH-45]
 ```
 
-### Example 2: Updating an Existing Unreleased Entry (Mode B)
-
-The latest changelog entry is `## [1.6.0] - 2026-03-27`, but tag `v1.6.0` does **not** exist. The most recent actual tag is `v1.5.1-rc2`. Since the initial entry was written, new commits have landed.
-
-All commits since `v1.5.1-rc2`:
-
-```
-a1b2c3d feat(cli): add --output flag for JSON output in gather command
-29ab8fc chore(docs): update docs to mention the new 'completion' command
-eb4edae feat(cli): adding 'completion' command to generate bash/zsh/fish auto-complete
-e81cc71 fix: hash command args when spawning k8s job    (from merged PR by @snyk-thannan)
-```
-
-The existing `## [1.6.0]` entry is **rewritten in-place** with all commits since `v1.5.1-rc2`, and the date updated to today:
-
-```markdown
-## [1.6.0] - 2026-03-28
-
-### Added
-
-- Command `debops completion <shell>` to generate shell auto-completion scripts for `bash`, `zsh`, and `fish`.
-- New `--output` flag for the `gather` command to support JSON output format.
-
-### Changed
-
-- Updated `AGENTS.md` and `README.md` with the latest changes and features.
-
-### Fixed
-
-- Spawned Kubernetes Job names now include a hash of the command arguments, allowing parallel invocations
-  of the same base command with different arguments to spawn distinct jobs without name collisions.
-  Thank you to [@snyk-thannan](https://github.com/snyk-thannan) for the fix!
-```
-
-### Example 3: Bootstrapping a New CHANGELOG.md (Mode C)
-
-A brand-new project has no `CHANGELOG.md` and no git tags. The full commit history is:
-
-```
-f1a2b3c feat: add CLI entry point with 'gather' and 'reset-offset' commands
-d4e5f6a feat: kafka consumer for offset storage topic
-c7b8a9d chore: initial project setup with Go module, Taskfile, and CI config
-```
-
-The skill creates a new `CHANGELOG.md` from scratch:
-
-```markdown
-# Changelog
-
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [0.1.0] - 2026-03-28
-
-### Added
-
-- CLI entry point with `gather` and `reset-offset` commands.
-- Kafka consumer for reading the Debezium offset storage topic.
-- Initial project setup with Go module, Taskfile, and CI configuration.
-```
+---
 
 ## Checklist Before Finishing
 
-- [ ] Determined the correct mode (A: new entry, B: update unreleased, C: bootstrap).
-- [ ] If Mode C: file has the standard Keep a Changelog header and first entry covers all commits.
-- [ ] If Mode B: updated the existing entry in-place (full rewrite from baseline tag).
-- [ ] If Mode A: created a new entry at the top of the changelog.
-- [ ] Version number is correct (preserved from existing entry in Mode B, unless user requested a bump).
-- [ ] Date is set to today.
-- [ ] Only non-empty sections are included.
-- [ ] Bullets describe user-visible impact, not implementation details.
-- [ ] External contributors are credited with a link to their GitHub profile.
-- [ ] No duplicate information across bullets.
-- [ ] Existing entries below the target entry are untouched.
+- [ ] Used an interactive questioning tool (`question`) to confirm or select the format if bootstrapping or if detection was ambiguous.
+- [ ] Complied with the exact conventions of the selected format (Keep a Changelog or HashiCorp).
+- [ ] Grouped and classified commits accurately into standard category headers.
+- [ ] If HashiCorp format: applied subsystem prefixes, sorted entries lexicographically by subsystem within categories, and appended `[GH-####]` PR references.
+- [ ] Verified that any generated file clearly documents which format it follows.
+- [ ] Preserved all existing untouched history below the edited section.
+- [ ] Set correct dates and version tags in accordance with the format rules.
