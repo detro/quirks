@@ -1,10 +1,10 @@
 ---
 name: asdf-manager
-description: Manage project runtime dependencies, tool versions, and plugins using asdf-vm. Translates requests like "update all tools" into precise asdf commands and implements strict security checks for custom plugins not in the official community index.
+description: Manage project runtime dependencies, tool versions, and plugins using asdf-vm. Proposes asdf to resolve missing script runtimes (e.g. Python, Perl) and handle tool updates with strict security checks for custom plugins.
 license: Apache-2.0
 metadata:
   author: Ivan De Marino (http://github.com/detro)
-  version: 1.1.0
+  version: 1.2.0
 ---
 
 # ASDF Manager
@@ -17,6 +17,7 @@ This skill allows agents to manage project tool versions and dependencies using 
 - When a `.tool-versions` file exists in the repository, or the user wants to set up multi-runtime versioning.
 - When the user asks to "update all tools" or set a tool to its "latest" version.
 - When the user wants to add a new development tool, language runtime, or utility that is manageable via `asdf`.
+- When an agent is trying to run a script in Python, Perl, or another scripting language, but is struggling to find the required runtime on the host system, especially if the project is already leveraging `asdf` (e.g., contains a `.tool-versions` file).
 
 ## When Not to Use
 
@@ -29,7 +30,7 @@ This skill allows agents to manage project tool versions and dependencies using 
 |-----------|----------|--------------------------------------------------------------------------------------------------------------------|
 | Tool Name | Yes      | The name of the runtime or tool (e.g., `nodejs`, `python`, `golang`).                                              |
 | Version   | No       | The specific version to set or install (e.g., `18.16.0`, `latest`, `system`).                                      |
-| Action    | Yes      | The operation to perform: `update-all`, `install-tool`, `set-version`, or `add-plugin`.                            |
+| Action    | Yes      | The operation to perform: `update-all`, `install-tool`, `set-version`, `add-plugin`, or `propose-missing-runtime`. |
 | Global    | No       | Set to `true` to apply the configuration globally (`$HOME/.tool-versions`) instead of the local project directory. |
 
 ## Workflow
@@ -106,11 +107,29 @@ Once the plugin is installed/added:
      ```
 3. Run `asdf reshim` after installation to ensure all shims are updated and the newly installed executable is immediately usable.
 
+### Step 6: Propose and Install Missing Runtimes for Scripts
+
+When an agent needs to execute a script (e.g., Python, Perl, Ruby, Bash, etc.) but cannot locate the necessary language runtime or interpreter on the host system:
+1. **Analyze Project Context**: Check if the project is already leveraging `asdf` by looking for a `.tool-versions` file or `asdf` configurations in the current directory or parent directories.
+   - **Why**: If the project already uses `asdf`, utilizing it to install the missing runtime keeps the environment consistent with existing project configurations and avoids polluting the global system or introducing version conflicts.
+2. **Propose ASDF as an Option**: Instead of failing or trying to install the runtime globally via system package managers (which might require root/sudo privileges or cause environment contamination), propose using `asdf` to install the required runtime.
+3. **Ask for Explicit User Permission**: Present a clear proposal to the user explaining:
+   - Which runtime is missing (e.g., `python`, `perl`).
+   - The script that needs to be executed.
+   - Why `asdf` is the recommended path (e.g., local version isolation, existing `.tool-versions` file).
+   - An explicit request for permission to add the plugin, install the runtime, and set the version locally.
+   - **Why**: Installing a runtime compiles or downloads binaries and modifies the local workspace environment. Explicit user permission is a critical safety and transparency boundary before performing these changes.
+4. **Install and Configure**: If and only if the user grants permission:
+   - Identify the official plugin name (e.g., `python`, `perl`) using `asdf plugin list all`.
+   - Add the plugin, install the specified/latest version, and set it locally (following **Steps 3, 4, and 5**).
+   - Ensure the runtime is added to the project's local `.tool-versions` file so that future executions of the script are fully reproducible.
+
 ## Validation
 
 - [ ] Run `asdf current` to verify that the newly set tool versions are active and resolve correctly in the directory.
 - [ ] Ensure `.tool-versions` file matches the configured tools and versions.
 - [ ] Check that custom plugins added outside the official index were only installed after explicit user confirmation.
+- [ ] Verify that missing script runtimes (like Python or Perl) are proposed and installed via `asdf` only after explicit user consent, and are properly written to the local `.tool-versions` file.
 
 ## Common Pitfalls
 
@@ -120,6 +139,7 @@ Once the plugin is installed/added:
 | Tool executable does not run after install          | Run `asdf reshim` to regenerate the shims directory wrappers so the shell can locate the new binary.                                                                                                                                         |
 | Installation fails due to missing compilation tools | Languages like Ruby, Python, and Erlang compiled from source using `asdf` require local build dependencies (like `gcc`, `openssl`, `make`, `libyaml`, etc.). Tell the user which dependencies are missing based on the build logs.           |
 | Non-interactive shell blocks on interactive prompts | Ensure `asdf` commands are run non-interactively or dependencies are pre-satisfied.                                                                                                                                                          |
+| Script still fails after installing runtime         | Check if the script contains a hardcoded absolute shebang (e.g., `#!/usr/bin/python3` or `#!/usr/bin/perl`). Suggest updating the shebang to use `#!/usr/bin/env <runtime>` (e.g., `#!/usr/bin/env python3`) so that `asdf` shims can intercept and resolve the execution path correctly. |
 
 ## References
 
