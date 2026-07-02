@@ -77,16 +77,18 @@ For helper scripts inside `scripts/`:
   jq --argjson cur "$(cat cur.json)" 'MAP USING $cur' new.json
   ```
 
-### 2. Development Loop & Manual Symlinking
-- A simple development loop is configured in this repository. Once a new skill is created or an existing one is updated, use the `task install` command (or simply `task` since it is the default task) to refresh/install the symlinks in the generic `~/.agents/skills/` directory that executing agents read:
+### 2. Development Loop & Manual Installation
+- A simple development loop is configured in this repository. Once a new skill is created or an existing one is updated, use the `task install` command (or simply `task` since it is the default task) to refresh/install the skills in the generic `~/.agents/skills/` directory that executing agents read:
   ```bash
   task install
   ```
-- Under the hood, this executes the robust symlinking command:
+- Under the hood, this deletes and replaces each skill directory present in this repository, while preserving other external skill directories.
+- You can list the skills present in this repository, check their defined version versus their installed version, and detect any mismatches by running:
   ```bash
-  ln -sfn $(pwd)/skills/* ~/.agents/skills/
+  task list
   ```
-- Ensure file paths, scripts, and relative assets referenced inside `SKILL.md` resolve correctly when executing in the context of the symlinked directory.
+  This command parses the YAML frontmatter from `SKILL.md` files using `yq` and outputs a clean, styled Markdown table rendered by `glow`.
+- Ensure file paths, scripts, and relative assets referenced inside `SKILL.md` resolve correctly when executing in the context of the installed directory.
 
 ---
 

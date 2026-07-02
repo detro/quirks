@@ -4,4 +4,42 @@ tasks:
   install:
     cmds:
       - mkdir -p ~/.agents/skills
-      - ln -sfn $(pwd)/skills/* ~/.agents/skills/
+      - |
+        for skill_path in skills/*; do
+          if [ -d "$skill_path" ]; then
+            skill_name=$(basename "$skill_path")
+            rm -rf ~/.agents/skills/"$skill_name"
+            cp -r "$skill_path" ~/.agents/skills/
+          fi
+        done
+
+  list:
+    desc: List skills present in this repo and their version
+    silent: true
+    cmds:
+      - |
+        (
+          echo "| Skill | Repo Version | Installed Version | Status |"
+          echo "| --- | --- | --- | --- |"
+          for file in skills/*/SKILL.md; do
+            frontmatter=$(sed -n '2,/^---$/ { /^---$/!p; }' "$file")
+            name=$(echo "$frontmatter" | yq '.name')
+            version=$(echo "$frontmatter" | yq '.metadata.version')
+            
+            installed_file="$HOME/.agents/skills/$name/SKILL.md"
+            if [ -f "$installed_file" ]; then
+              installed_frontmatter=$(sed -n '2,/^---$/ { /^---$/!p; }' "$installed_file")
+              installed_version=$(echo "$installed_frontmatter" | yq '.metadata.version')
+            else
+              installed_version="N/A"
+            fi
+            
+            if [ "$version" = "$installed_version" ]; then
+              status="Up-to-date"
+            else
+              status="Mismatch (run task install) ⚠️"
+            fi
+            
+            echo "| $name | $version | $installed_version | $status |"
+          done
+        ) | glow -
