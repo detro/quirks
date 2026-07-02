@@ -2,6 +2,8 @@ version: '3'
 
 tasks:
   install:
+    desc: Install Quirks (skills) from this repo
+    silent: true
     cmds:
       - mkdir -p ~/.agents/skills
       - |
@@ -14,7 +16,7 @@ tasks:
         done
 
   list:
-    desc: List skills present in this repo and their version
+    desc: List Quirks (skills) present in this repo and their version
     silent: true
     cmds:
       - |
