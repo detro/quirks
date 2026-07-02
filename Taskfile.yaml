@@ -45,3 +45,41 @@ tasks:
             echo "| $name | $version | $installed_version | $status |"
           done
         ) | glow -
+
+  update-readme:
+    desc: Regenerate and update the skills table in README.md
+    silent: true
+    cmds:
+      - |
+        temp_table=$(mktemp)
+        echo "| Skill | Version | Description |" >> "$temp_table"
+        echo "| --- | --- | --- |" >> "$temp_table"
+        for file in skills/*/SKILL.md; do
+          frontmatter=$(sed -n '2,/^---$/ { /^---$/!p; }' "$file")
+          name=$(echo "$frontmatter" | yq '.name')
+          version=$(echo "$frontmatter" | yq '.metadata.version')
+          description=$(echo "$frontmatter" | yq '.description')
+          echo "| [$name](skills/$name) | \`$version\` | $description |" >> "$temp_table"
+        done
+        
+        # Insert table into README.md between markers
+        temp_readme=$(mktemp)
+        export TEMP_TABLE="$temp_table"
+        awk '
+          /<!-- SKILLS_TABLE_START -->/ {
+            print
+            print ""
+            system("cat \"" ENVIRON["TEMP_TABLE"] "\"")
+            print ""
+            skip = 1
+            next
+          }
+          /<!-- SKILLS_TABLE_END -->/ {
+            skip = 0
+          }
+          !skip {
+            print
+          }
+        ' README.md > "$temp_readme"
+        mv "$temp_readme" README.md
+        rm -f "$temp_table"

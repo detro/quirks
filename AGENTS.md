@@ -88,6 +88,11 @@ For helper scripts inside `scripts/`:
   task list
   ```
   This command parses the YAML frontmatter from `SKILL.md` files using `yq` and outputs a clean, styled Markdown table rendered by `glow`.
+- You can regenerate and update the available skills table in the `README.md` by running:
+  ```bash
+  task update-readme
+  ```
+  This command dynamically parses all the `SKILL.md` files in the `skills/` directory to construct the markdown table between the comment markers in `README.md`.
 - Ensure file paths, scripts, and relative assets referenced inside `SKILL.md` resolve correctly when executing in the context of the installed directory.
 
 ---
