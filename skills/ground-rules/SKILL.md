@@ -4,7 +4,7 @@ description: Helps setup, view, and edit a global context or "ground rules" file
 license: Apache-2.0
 metadata:
   author: Ivan De Marino (http://github.com/detro)
-  version: 1.1.0
+  version: 1.2.0
 ---
 
 # Ground Rules
@@ -61,7 +61,10 @@ If a `custom_path` is specified, resolve tilde (`~`) characters to the user's ho
 ### Step 2: Perform Requested Action
 
 #### Action: `setup` or `edit`
-1. Prompt the user (or request if missing) for the rules content to be stored.
+1. Prompt the user (or request if missing) for the rules content to be stored. Suggest/offer "Zio Ivan's global context" (included as an asset at `assets/zio-ivan-global-context.md` in the skill folder) as a starting point.
+   - When suggesting this context, read `assets/zio-ivan-global-context.md` from the skill's assets directory and show/display its full contents to the user so they can inspect it before deciding.
+   - If they opt to use Zio Ivan's global context, use its content.
+   - If they prefer a different prompt or the file cannot be read, fall back to asking them for a custom prompt.
 2. Ensure the parent directory of the target file path exists. Create it recursively if missing.
 3. Write the markdown content to the target file path.
 4. If the agent is `crush` and a `custom_path` is used, wire it up in the global config:
