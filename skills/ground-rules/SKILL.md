@@ -4,7 +4,7 @@ description: Helps setup, view, and edit a global context or "ground rules" file
 license: Apache-2.0
 metadata:
   author: Ivan De Marino (http://github.com/detro)
-  version: 1.2.0
+  version: 1.3.0
 ---
 
 # Ground Rules
